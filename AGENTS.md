@@ -1,90 +1,76 @@
 # AGENTS.md
 
 ## Purpose
-This repository is now an **OSTrack-only single-object tracking workspace**.
-Agents operating here should optimize for the paper workflow:
-
-1. extract frames from video
+This repository is an **OSTrack-only single-object tracking workspace**.
+Agents should optimize for the paper workflow this repo actually supports:
+1. extract frames from a local video
 2. label one target per frame
-3. convert annotations into GOT10K-like data
+3. convert annotations into GOT10K-like train/val data
 4. fine-tune OSTrack
-5. run checkpoints on local videos and compare results
+5. run checkpoints on local videos and compare outputs
 
-Do not invent support for the removed legacy tracker pipeline.
+Do **not** invent support for the removed legacy tracker pipeline.
 
-## Repository Reality
-- Root workflow is centered on `ostrack/`.
-- Legacy files such as `demo.py`, `train.py`, and `transformer_tracker.py` are no longer part of the supported workflow.
-- Main retained assets:
-  - `env.yml`
-  - `readme.md`
-  - `AGENTS.md`
-  - `test.mp4`
-  - `ostrack/`
-- Vendored upstream code lives at `ostrack/vendor/OSTrack/`.
+## Repository Scope
+- The supported workflow is rooted in `ostrack/`.
+- Vendored upstream OSTrack code lives in `ostrack/vendor/OSTrack/`.
+- Root-level legacy scripts are not the recommended path for this workspace.
+- The main top-level files are `README.md`, `env.yml`, `AGENTS.md`, `test.mp4`, and `ostrack/`.
 
 ## Environment Setup
-Base environment:
-
+Create and activate the intended conda environment first:
 ```bash
 conda env create -f env.yml
 conda activate transformer_tracker
 ```
 
-OSTrack extras:
+`env.yml` pins the base environment to **Python 3.8** and installs PyTorch, torchvision, OpenCV, NumPy, matplotlib, and pip.
 
+Then install OSTrack-specific packages:
 ```bash
-pip install -r ostrack/requirements.txt
+python -m pip install -r ostrack/requirements.txt
 ```
 
-Required MAE checkpoint path:
+Use `python -m pip`, not bare `pip`, when possible.
 
+## Required Assets
+Training expects the MAE pretrained checkpoint here:
 ```bash
 ostrack/vendor/OSTrack/pretrained_models/mae_pretrain_vit_base.pth
 ```
 
-## No Formal Lint/Test Stack
-There is still no formal pytest/ruff/mypy project setup at the repo root.
-
-Closest verification steps are:
-
+The upstream-style environment reference is:
 ```bash
-python -m py_compile ostrack/tools/extract_frames.py ostrack/tools/label_sequence.py ostrack/tools/prepare_dataset.py ostrack/train_ostrack.py ostrack/run_video.py ostrack/run_video_batch.py
-python ostrack/train_ostrack.py --dry-run
-python ostrack/run_video.py --help
-python ostrack/run_video_batch.py --help
+ostrack/vendor/OSTrack/ostrack_cuda113_env.yaml
 ```
 
-Use these as smoke checks only.
-
-## Primary Scripts and Real Commands
-
-### 1. Extract frames
+## Primary Workflow Commands
+### 1. Extract frames from video
 ```bash
 python ostrack/tools/extract_frames.py --video test.mp4 --output-root ostrack\data\labeled --sequence-name my_sequence
 ```
 
-### 2. Label frames
+### 2. Label one target per frame
 ```bash
 python ostrack/tools/label_sequence.py --frames-dir ostrack\data\labeled\my_sequence\frames --output-root ostrack\data\labeled --sequence-name my_sequence
 ```
 
-### 3. Prepare GOT10K-like data
+### 3. Convert labels into GOT10K-like data
 ```bash
 python ostrack/tools/prepare_dataset.py --sequence-dir ostrack\data\labeled\my_sequence\frames --gt-file ostrack\data\labeled\my_sequence\groundtruth.txt --output-root ostrack\data\processed --sequence-name my_sequence --val-ratio 0.2 --overwrite
 ```
 
-### 4. Dry-run training setup
+### 4. Dry-run the training wrapper
 ```bash
 python ostrack/train_ostrack.py --dry-run
 ```
 
-### 5. Launch training
+### 5. Launch fine-tuning
 ```bash
 python ostrack/train_ostrack.py --mode single --nproc-per-node 1 --use-wandb 0
 ```
 
-### 6. Run one checkpoint on video
+### 6. Run one checkpoint on a local video
 ```bash
 python ostrack/run_video.py --video test.mp4 --config vitb_256_mae_ce_32x4_custom_ep50 --checkpoint "ostrack/outputs/checkpoints/train/ostrack/vitb_256_mae_ce_32x4_custom_ep50/OSTrack_ep0005.pth.tar" --init-bbox 181 386 223 186
 ```
@@ -94,48 +80,99 @@ python ostrack/run_video.py --video test.mp4 --config vitb_256_mae_ce_32x4_custo
 python ostrack/run_video_batch.py --video test.mp4 --config vitb_256_mae_ce_32x4_custom_ep50 --epochs 1 3 5 --init-bbox 181 386 223 186
 ```
 
-## Important Behavioral Notes
-- `label_sequence.py` is interactive and uses OpenCV mouse-drag ROI selection.
-- `prepare_dataset.py` expects `groundtruth.txt` in `x,y,w,h` format.
-- `prepare_dataset.py` requires at least 20 frames.
-- The prepared dataset is GOT10K-like, not full official GOT10K.
-- The current custom config is intentionally biased toward quick single-GPU experimentation:
-  - validation effectively disabled during the 50-epoch run
-  - checkpoint saving enabled every epoch
-  - batch size reduced for stability
-- Checkpoints are expected under:
+## Build / Lint / Test Reality
+There is **no formal repo-wide lint, test, or typecheck stack** such as pytest, ruff, mypy, tox, or nox at the repository root.
 
+For this repo, treat the following as the supported verification commands:
+```bash
+python -m py_compile ostrack/tools/extract_frames.py ostrack/tools/label_sequence.py ostrack/tools/prepare_dataset.py ostrack/train_ostrack.py ostrack/run_video.py ostrack/run_video_batch.py
+python ostrack/train_ostrack.py --dry-run
+python ostrack/run_video.py --help
+python ostrack/run_video_batch.py --help
+```
+
+## Single-File / Single-Target Verification
+If you change one Python file, the closest thing to a single-test command is:
+```bash
+python -m py_compile path\to\changed_file.py
+```
+
+Use targeted smoke checks depending on the file you changed:
+- `ostrack/tools/extract_frames.py` → `python ostrack/tools/extract_frames.py --help`
+- `ostrack/tools/label_sequence.py` → `python ostrack/tools/label_sequence.py --help`
+- `ostrack/tools/prepare_dataset.py` → `python ostrack/tools/prepare_dataset.py --help`
+- `ostrack/train_ostrack.py` → `python ostrack/train_ostrack.py --dry-run`
+- `ostrack/run_video.py` → `python ostrack/run_video.py --help`
+- `ostrack/run_video_batch.py` → `python ostrack/run_video_batch.py --help`
+
+There is no meaningful pytest-style “run a single test” command because the repo does not define a test suite.
+
+## Data and Directory Expectations
+- Labeled frame sequences live under `ostrack/data/labeled/`.
+- Processed GOT10K-like data lives under `ostrack/data/processed/got10k/`.
+- Outputs live under `ostrack/outputs/`.
+- Checkpoints are expected under:
 ```bash
 ostrack/outputs/checkpoints/train/ostrack/vitb_256_mae_ce_32x4_custom_ep50/
 ```
 
-## Code Style and Editing Guidance
-- Use 4 spaces for indentation.
-- Keep edits local and minimal.
-- Prefer preserving upstream OSTrack structure inside `ostrack/vendor/OSTrack/`.
-- When patching vendored code, make the smallest compatibility fix possible and avoid broad refactors.
-- Keep new local tooling under `ostrack/` rather than the repo root when feasible.
-- Use explicit CLI flags and clear path defaults.
+## Important Behavioral Constraints
+- `label_sequence.py` is interactive and depends on OpenCV ROI selection.
+- `prepare_dataset.py` expects `groundtruth.txt` lines in `x,y,w,h` format.
+- `prepare_dataset.py` requires at least **20 frames**.
+- The generated data is **GOT10K-like**, not the full official GOT10K dataset.
+- The current custom experiment config is `vitb_256_mae_ce_32x4_custom_ep50`.
+- The vendored workspace has local modifications for this repo; do not casually revert them.
 
-## Known Local Modifications to Vendored OSTrack
-Agents should assume the vendored OSTrack code is **not pristine upstream**. It has local adjustments for this workspace, including:
-- custom GOT10K-like dataset names
-- Windows path normalization in generated local environment files
-- optional imports/fallbacks for some dependencies
-- compatibility fixes for newer PyTorch/Python behavior
-- training configured to save checkpoints every epoch
+## Code Style Guidelines
+### General Rules
+- Use **4 spaces** for indentation.
+- Prefer **small, local edits** over broad refactors.
+- Preserve the structure of `ostrack/vendor/OSTrack/` whenever possible.
+- Put new repo-specific tooling under `ostrack/` instead of the repo root when feasible.
+- Prefer explicit CLI flags and explicit path defaults.
 
-Do not casually revert these changes.
+### Imports and Formatting
+- Keep imports grouped as standard library first, then third-party, with a blank line between groups.
+- Prefer direct imports already used in nearby files.
+- Do not introduce unused imports.
+- Match surrounding formatting instead of reformatting unrelated code.
+- Keep long argparse declarations readable with one argument per block.
+- Avoid compressing multi-step logic into dense one-liners.
 
-## Verification Guidance
-When changing this repository:
-- If you change labeling tools, run their `--help` and a `py_compile` smoke check.
-- If you change dataset prep, verify the generated `got10k/train` and `got10k/val` layout.
-- If you change training code, run `python ostrack/train_ostrack.py --dry-run` first.
-- If you change video inference, run `python ostrack/run_video.py --help` and, when a checkpoint exists, test one local video.
+### Types and Naming
+- Follow the existing lightweight style: `Path` for filesystem arguments, builtin types for argparse values, and simple annotations where they help.
+- Do not add type noise to small scripts.
+- Do not suppress type issues with `Any`, ignore comments, or similar escapes.
+- Use descriptive snake_case for functions, variables, and helpers.
+- Keep CLI flag names explicit and reuse local names like `sequence_name`, `output_root`, `checkpoint_path`, and `repo_root`.
+
+### Paths, Errors, and Execution
+- Prefer `pathlib.Path` over string path manipulation.
+- Resolve relative paths against the repo layout the same way existing wrappers do.
+- Create directories with `mkdir(parents=True, exist_ok=True)` when needed.
+- Validate important files and directories before launching heavy work.
+- Validate early and raise **clear `ValueError` messages** for invalid inputs or missing files.
+- Fail fast on missing prerequisites rather than silently continuing.
+- Do not add empty `except` blocks.
+- Do not swallow subprocess failures; existing wrappers use `check=True` for a reason.
+- Keep wrapper scripts explicit about the commands they build and print.
+- Do not silently change default config names, checkpoint locations, or data roots.
+
+## Vendored OSTrack Guidance
+Assume `ostrack/vendor/OSTrack/` is **not pristine upstream**. Local changes may include custom dataset names like `CUSTOM_GOT10K_train` and `CUSTOM_GOT10K_val`, Windows path normalization, compatibility fixes, and single-GPU-friendly defaults. When patching vendored code, make the **smallest compatibility fix possible**.
+
+## Verification Guidance by Change Type
+- Tooling / labeling changes → run `--help` plus `py_compile`.
+- Dataset-prep changes → verify the generated `got10k/train` and `got10k/val` layout.
+- Training wrapper changes → run `python ostrack/train_ostrack.py --dry-run`.
+- Video inference changes → run `python ostrack/run_video.py --help`; if a checkpoint exists, test one local video.
 
 ## Cursor / Copilot Rules
-No repository-specific Cursor or Copilot rule files were found.
+No repository-specific Cursor rules or Copilot instruction files were found.
+- No `.cursor/rules/` directory was found.
+- No `.cursorrules` file was found.
+- No `.github/copilot-instructions.md` file was found.
 
 ## Agent Operating Rule
 Treat this repository as an **OSTrack fine-tuning and evaluation workspace**, not as a general tracker playground.
