@@ -3,6 +3,7 @@ __pycache__
 *.pth
 
 data/
+!ostrack/vendor/OSTrack/lib/train/data/
 outputs/
 
 *.mp4
