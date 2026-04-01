@@ -1,155 +1,263 @@
+# OSTrack 单目标追踪工作区
 
-# 目标追踪器 (Target Tracker)
+本仓库现在只保留 **OSTrack 微调与推理方案**。
 
-基于Transformer和OpenCV的目标追踪系统，支持多种追踪器类型和预训练模型。
+目标是支持一条清晰的论文工作流：
 
-## 功能特点
+1. 视频抽帧
+2. 逐帧人工标注单目标框
+3. 转成 GOT10K-like 数据
+4. 微调 OSTrack
+5. 用不同 checkpoint 跑视频并导出结果
 
-- 支持多种追踪器类型：OpenCV KCF、Transformer + 预训练ResNet、Transformer + 自定义模型
-- 交互式目标选择：使用鼠标拖拽框选要追踪的目标
-- 实时追踪信息显示：FPS、帧数、置信度等
-- 支持视频输出保存
-- 支持视频文件和摄像头输入
-- 灵活的命令行参数配置
+---
 
-## 安装依赖
+## 1. 环境准备
+
+先创建并激活 Conda 环境：
 
 ```bash
 conda env create -f env.yml
 conda activate transformer_tracker
 ```
 
-## 快速开始
-
-### 基本用法
+再安装 OSTrack 额外依赖：
 
 ```bash
-# 使用默认参数（OpenCV KCF追踪器，视频文件为test.mp4）
-python demo.py
-
-# 指定视频文件
-python demo.py --video test.mp4
-
-# 使用摄像头
-python demo.py --video 0
+pip install -r ostrack/requirements.txt
 ```
 
-### 选择追踪器类型
+MAE 预训练权重默认位于：
 
 ```bash
-# 使用OpenCV KCF追踪器（默认，快速但精度较低）
-python demo.py --tracker kcf
-
-# 使用Transformer追踪器 + 预训练ResNet（较慢但精度较高）
-python demo.py --tracker resnet
-
-# 使用Transformer追踪器 + 自定义模型
-python demo.py --tracker custom --model tracker_model.pth
+ostrack/vendor/OSTrack/pretrained_models/mae_pretrain_vit_base.pth
 ```
 
-## 命令行参数
+---
 
-- `--video`: 视频文件路径或摄像头索引（默认: test.mp4）
-- `--tracker`: 追踪器类型，可选值：
-  - `kcf`: OpenCV KCF追踪器（快速，但精度较低）
-  - `resnet`: Transformer追踪器 + 预训练ResNet（较慢，但精度较高）
-  - `custom`: Transformer追踪器 + 自定义模型（需要提供模型路径）
-- `--model`: 预训练模型路径（仅当--tracker=custom时需要）
+## 2. 仓库中保留的核心脚本
 
-## 训练模型
+### 根目录
 
-### 使用预训练ResNet训练
+- `env.yml`：基础 Conda 环境
+- `AGENTS.md`：给 coding agent 的仓库说明
+- `readme.md`：当前使用文档
+- `test.mp4`：示例视频
+
+### `ostrack/`
+
+- `ostrack/tools/extract_frames.py`：视频抽帧
+- `ostrack/tools/label_sequence.py`：逐帧人工标注并导出 `groundtruth.txt`
+- `ostrack/tools/prepare_dataset.py`：转成 GOT10K-like 数据布局
+- `ostrack/train_ostrack.py`：启动微调训练
+- `ostrack/run_video.py`：用单个 checkpoint 跑视频推理
+- `ostrack/run_video_batch.py`：批量比较多个 checkpoint
+- `ostrack/README.md`：OSTrack 子工作区说明
+- `ostrack/vendor/OSTrack/`：vendored 官方 OSTrack 代码
+
+---
+
+## 3. 推荐使用顺序
+
+### Step 1：视频抽帧
 
 ```bash
-python train.py --video test.mp4 \
---use_pretrained_backbone \
---save_path tracker_model.pth \
---num_epochs 50 \
---batch_size 8  
+python ostrack/tools/extract_frames.py --video test.mp4 --output-root ostrack\data\labeled --sequence-name my_sequence
 ```
 
-这会使用预训练的ResNet50作为特征提取器进行训练，生成的模型文件为`tracker_model.pth`。
+#### 参数说明
 
+- `--video`：输入视频路径，必填
+- `--output-root`：抽帧输出根目录，默认 `ostrack/data/labeled`
+- `--sequence-name`：输出序列名，默认使用视频文件名
+- `--start-frame`：从第几帧开始导出，默认 `0`
+- `--max-frames`：最多导出多少帧，默认导出全部
+- `--stride`：每隔多少帧导出一张，默认 `1`
+- `--overwrite`：如果目标目录已有 JPG，先删除再重新抽帧
 
-## 交互操作
-
-- **鼠标拖拽**: 框选要追踪的目标
-- **空格键**: 开始/暂停追踪
-- **R键**: 重置选择
-- **Q键或ESC**: 退出程序
-
-## 项目结构
-
-```
-track/
-├── demo.py                   # 主程序（支持命令行参数）
-├── transformer_tracker.py    # 追踪器模型实现
-├── train.py                  # 训练脚本
-├── README.md                 # 项目说明文档
-└── test.mp4                  # 示例视频文件
-```
-
-## 模型说明
-
-### OpenCV KCF追踪器
-- 优点：速度快，实时性好
-- 缺点：精度较低，对遮挡和快速运动敏感
-- 适用场景：实时追踪，对精度要求不高的场景
-
-### Transformer + 预训练ResNet追踪器
-- 优点：精度高，泛化能力强
-- 缺点：速度较慢
-- 适用场景：离线处理，对精度要求高的场景
-
-### Transformer + 自定义模型追踪器
-- 优点：可以针对特定场景优化
-- 缺点：需要训练模型
-- 适用场景：有特定训练数据，需要针对特定场景优化的场景
-
-## 常见问题
-
-### 1. 模型加载失败
-
-如果遇到模型加载错误，程序会自动回退到OpenCV追踪器。建议重新训练模型：
+输出目录示例：
 
 ```bash
-python train.py
+ostrack/data/labeled/my_sequence/frames/
 ```
 
-### 2. 追踪效果不好
+---
 
-可以尝试以下方法：
-- 使用`--tracker resnet`选项，使用预训练ResNet
-- 训练自己的模型：`python train.py`
-- 确保选择的目标区域足够大且特征明显
+### Step 2：逐帧标注目标框
 
-### 3. 速度太慢
+```bash
+python ostrack/tools/label_sequence.py --frames-dir ostrack\data\labeled\my_sequence\frames --output-root ostrack\data\labeled --sequence-name my_sequence
+```
 
-可以尝试以下方法：
-- 使用`--tracker kcf`选项，使用OpenCV追踪器
-- 降低视频分辨率
-- 使用GPU加速
+#### 参数说明
 
-## 性能优化
+- `--frames-dir`：待标注帧目录，必填
+- `--output-root`：标注结果根目录，默认 `ostrack/data/labeled`
+- `--sequence-name`：输出序列名；如果 `frames-dir` 末尾目录名是 `frames`，默认用其父目录名
+- `--overwrite`：先清空已有 `groundtruth.txt` 再重标
 
-### 使用GPU加速
+#### 标注快捷键
 
-确保安装了CUDA版本的PyTorch，程序会自动检测并使用GPU。
+- 鼠标左键拖拽：画框
+- `Space`：确认当前帧并进入下一帧
+- `R`：清空当前框
+- `B`：返回上一帧
+- `Q` / `ESC`：保存并退出
 
-### 调整视频分辨率
+输出文件：
 
-在代码中修改视频分辨率或使用低分辨率视频可以提高速度。
+```bash
+ostrack/data/labeled/my_sequence/groundtruth.txt
+```
 
-### 选择合适的追踪器
+格式：每行一个 bbox，内容为 `x,y,w,h`
 
-根据应用场景选择合适的追踪器：
-- 实时应用：使用OpenCV KCF追踪器
-- 离线处理：使用Transformer追踪器
+---
 
-## 贡献
+### Step 3：转换为 GOT10K-like 训练数据
 
-欢迎提交问题和拉取请求。
+```bash
+python ostrack/tools/prepare_dataset.py --sequence-dir ostrack\data\labeled\my_sequence\frames --gt-file ostrack\data\labeled\my_sequence\groundtruth.txt --output-root ostrack\data\processed --sequence-name my_sequence --val-ratio 0.2 --overwrite
+```
 
-## 许可证
+#### 参数说明
 
-MIT License
+- `--sequence-dir`：输入图片序列目录，必填
+- `--gt-file`：对应的 `groundtruth.txt`，必填
+- `--output-root`：处理后数据根目录，默认 `ostrack/data/processed`
+- `--sequence-name`：序列名，默认使用输入目录名
+- `--val-ratio`：验证集比例，默认 `0.2`
+- `--overwrite`：清掉旧的同名 train/val 序列后重建
+
+注意：
+
+- 脚本要求至少 **20 帧**
+- 输出帧会统一转成 `00000001.jpg` 这种命名
+
+输出目录示例：
+
+```bash
+ostrack/data/processed/got10k/train/
+ostrack/data/processed/got10k/val/
+```
+
+---
+
+### Step 4：训练 OSTrack
+
+```bash
+python ostrack/train_ostrack.py --mode single --nproc-per-node 1 --use-wandb 0
+```
+
+#### 参数说明
+
+- `--data-root`：处理后数据根目录，默认 `ostrack/data/processed`
+- `--save-dir`：训练输出根目录，默认 `ostrack/outputs`
+- `--config`：实验配置名，默认 `vitb_256_mae_ce_32x4_custom_ep50`
+- `--mode`：训练模式，`single` 或 `multiple`
+- `--nproc-per-node`：每节点 GPU 数，单卡时填 `1`
+- `--use-wandb`：是否启用 wandb，建议 `0`
+- `--pretrained-file`：MAE 预训练权重路径
+- `--dry-run`：只检查路径并打印命令，不真正开训
+
+#### 当前仓库已做的训练优化
+
+- 关闭了频繁验证（避免第 5 个 epoch 后卡住）
+- 每个 epoch 都会保存 checkpoint
+- 当前配置更适合小数据、单卡、快速出论文结果
+
+checkpoint 默认输出到：
+
+```bash
+ostrack/outputs/checkpoints/train/ostrack/vitb_256_mae_ce_32x4_custom_ep50/
+```
+
+---
+
+### Step 5：用单个 checkpoint 跑视频
+
+```bash
+python ostrack/run_video.py --video test.mp4 --config vitb_256_mae_ce_32x4_custom_ep50 --checkpoint "ostrack/outputs/checkpoints/train/ostrack/vitb_256_mae_ce_32x4_custom_ep50/OSTrack_ep0005.pth.tar" --init-bbox 181 386 223 186
+```
+
+#### 参数说明
+
+- `--video`：输入视频路径，必填
+- `--config`：OSTrack 配置名
+- `--checkpoint`：显式指定 checkpoint；不传则自动找最新 checkpoint
+- `--output-dir`：推理结果输出目录，默认 `ostrack/outputs/video_results`
+- `--init-bbox`：初始框 `x y w h`；不传则会弹出交互 ROI 选择框
+
+输出内容：
+
+- 带框结果视频
+- 每帧 bbox 文本
+
+---
+
+### Step 6：批量比较多个 checkpoint
+
+```bash
+python ostrack/run_video_batch.py --video test.mp4 --config vitb_256_mae_ce_32x4_custom_ep50 --epochs 1 3 5 --init-bbox 181 386 223 186
+```
+
+#### 参数说明
+
+- `--video`：输入视频路径，必填
+- `--config`：OSTrack 配置名
+- `--epochs`：按 epoch 编号批量选择 checkpoint，例如 `1 3 5 10`
+- `--checkpoints`：直接传多个 checkpoint 路径；提供后会覆盖 `--epochs`
+- `--output-dir`：结果输出目录，默认 `ostrack/outputs/video_results`
+- `--init-bbox`：为所有 checkpoint 指定同一个初始框
+- `--dry-run`：只打印将执行的命令
+
+---
+
+## 4. 论文实验建议
+
+推荐优先比较这些 checkpoint：
+
+- `ep0001`
+- `ep0003`
+- `ep0005`
+- `ep0010`
+- `ep0020`
+
+最常见的论文工作流是：
+
+1. 先用 `ep0005` 做第一次视频结果预览
+2. 再比较 `ep0010` 和 `ep0020`
+3. 选出最稳的一个做最终结果图和视频
+
+---
+
+## 5. 常见问题
+
+### 训练到 epoch 末尾像“卡住”
+
+当前仓库已经关闭了频繁验证，并设置为每个 epoch 保存 checkpoint。
+如果日志长期不动，优先检查：
+
+- `ostrack/outputs/logs/`
+- `ostrack/outputs/checkpoints/`
+
+### 为什么第 1 个 epoch 没立刻出视频结果
+
+因为训练和推理是分开的。先确认 checkpoint 已经生成，再用 `run_video.py` 或 `run_video_batch.py` 跑视频。
+
+### 推理时没有传初始框怎么办
+
+不传 `--init-bbox` 会弹出交互式 ROI 选择框。
+
+---
+
+## 6. 当前仓库范围
+
+当前仓库只保留：
+
+- OSTrack 数据准备
+- OSTrack 微调训练
+- OSTrack 视频推理
+- 论文结果比较所需脚本
+
+旧的自定义 tracker / KCF / CSRT / VitTrack 方案已经从主工作区移除，不再作为推荐流程。
